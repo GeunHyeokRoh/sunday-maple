@@ -1,0 +1,35 @@
+name: Sunday Maple Notifier
+
+on:
+  schedule:
+    # 매주 금요일 10:00~23:55 KST = 01:00~14:55 UTC, 5분 간격
+    - cron: '*/5 1-14 * * 5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm run start
+        env:
+          NEXON_API_KEY: ${{ secrets.NEXON_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Commit updated state
+        run: |
+          if ! git diff --quiet state.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -m "chore: mark sunday maple notice sent for this week"
+            git push
+          fi
