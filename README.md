@@ -5,8 +5,9 @@
 ## 동작 방식
 
 - 매주 금요일 10:00~23:55(KST) 5분 간격으로 GitHub Actions가 `src/index.js`를 실행
-- `GET /maplestory/v1/notice`에서 제목에 "썬데이 메이플"이 포함되고 오늘 날짜인 공지를 찾음
-- 찾으면 `GET /maplestory/v1/notice/detail`로 본문을 받아 첫 번째 `<img>` 이미지를 추출해 다운로드
+- `GET /maplestory/v1/notice-event`(이벤트 공지)에서 제목에 "썬데이 메이플"이 포함되고 등록일이 오늘 날짜인 이벤트를 찾음
+  - "썬데이 메이플"은 일반 공지사항이 아니라 이벤트 게시판에 등록되는 콘텐츠라 `v1/notice`가 아닌 `v1/notice-event`를 사용한다
+- 찾으면 목록 응답에 포함된 `thumbnail_url`을 이미지로 바로 사용 (상세 API/HTML 파싱 불필요)
 - 디스코드 웹훅으로 이미지 전송
 - `state.json`에 오늘 날짜를 기록하고 커밋 → 같은 주에는 더 이상 전송하지 않음 (다음 금요일이 되면 날짜가 바뀌므로 자동으로 다시 동작)
 

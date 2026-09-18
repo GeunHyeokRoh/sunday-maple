@@ -21,13 +21,6 @@ async function fetchNexon(path) {
   return res.json();
 }
 
-function extractImageUrl(html) {
-  const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-  if (!match) return null;
-  const src = match[1];
-  return src.startsWith('http') ? src : new URL(src, 'https://www.nexon.com').toString();
-}
-
 async function main() {
   const today = todayKST();
   const state = JSON.parse(await readFile(STATE_PATH, 'utf-8'));
@@ -37,23 +30,22 @@ async function main() {
     return;
   }
 
-  const { notice } = await fetchNexon('/maplestory/v1/notice');
-  const target = notice.find(
+  // "썬데이 메이플"은 일반 공지(v1/notice)가 아니라 이벤트 공지(v1/notice-event)로 등록된다.
+  const { event_notice: events } = await fetchNexon('/maplestory/v1/notice-event');
+  const target = events.find(
     (n) =>
       (n.title.includes('썬데이 메이플') || n.title.includes('썬데이메이플')) &&
       n.date.startsWith(today)
   );
 
   if (!target) {
-    console.log(`No Sunday Maple notice for ${today} yet.`);
+    console.log(`No Sunday Maple event notice for ${today} yet.`);
     return;
   }
 
-  const detail = await fetchNexon(`/maplestory/v1/notice/detail?notice_id=${target.notice_id}`);
-  const imageUrl = extractImageUrl(detail.contents);
-
+  const imageUrl = target.thumbnail_url;
   if (!imageUrl) {
-    console.log(`Notice found (${target.title}) but no image in contents.`);
+    console.log(`Notice found (${target.title}) but no thumbnail_url.`);
     return;
   }
 
