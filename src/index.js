@@ -21,6 +21,18 @@ async function fetchNexon(path) {
   return res.json();
 }
 
+function extractImageUrls(html) {
+  const urls = [];
+  const regex = /<img[^>]+src=["']([^"']+)["']/gi;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const src = match[1];
+    const absolute = src.startsWith('http') ? src : new URL(src, 'https://www.nexon.com').toString();
+    if (!urls.includes(absolute)) urls.push(absolute);
+  }
+  return urls;
+}
+
 async function main() {
   const today = todayKST();
   const state = JSON.parse(await readFile(STATE_PATH, 'utf-8'));
@@ -43,21 +55,25 @@ async function main() {
     return;
   }
 
-  const imageUrl = target.thumbnail_url;
-  if (!imageUrl) {
-    console.log(`Notice found (${target.title}) but no thumbnail_url.`);
+  const detail = await fetchNexon(`/maplestory/v1/notice-event/detail?notice_id=${target.notice_id}`);
+  const imageUrls = extractImageUrls(detail.contents);
+
+  if (imageUrls.length === 0) {
+    console.log(`Notice found (${target.title}) but no images in contents.`);
     return;
   }
 
-  const imageRes = await fetch(imageUrl);
-  if (!imageRes.ok) {
-    throw new Error(`Image download failed: ${imageRes.status}`);
-  }
-  const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
-
   const form = new FormData();
-  form.append('content', `📅 ${target.title}\n${target.url}`);
-  form.append('file', new Blob([imageBuffer]), 'sunday_maple.jpg');
+  for (const [i, url] of imageUrls.entries()) {
+    const imageRes = await fetch(url);
+    if (!imageRes.ok) {
+      throw new Error(`Image download failed (${url}): ${imageRes.status}`);
+    }
+    const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
+    const pathname = new URL(url).pathname;
+    const ext = pathname.includes('.') ? pathname.split('.').pop() : 'jpg';
+    form.append(`files[${i}]`, new Blob([imageBuffer]), `sunday_maple_${i}.${ext}`);
+  }
 
   const webhookRes = await fetch(DISCORD_WEBHOOK_URL, { method: 'POST', body: form });
   if (!webhookRes.ok) {
@@ -66,7 +82,7 @@ async function main() {
 
   await writeFile(STATE_PATH, JSON.stringify({ lastSentWeek: today }, null, 2) + '\n');
 
-  console.log(`Sent Sunday Maple notice for ${today}: ${target.title}`);
+  console.log(`Sent Sunday Maple notice for ${today}: ${target.title} (${imageUrls.length} images)`);
 }
 
 main().catch((err) => {
