@@ -11,6 +11,12 @@ function todayKST() {
   return kst.toISOString().slice(0, 10);
 }
 
+function addDays(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function fetchNexon(path) {
   const res = await fetch(`https://open.api.nexon.com${path}`, {
     headers: { 'x-nxopen-api-key': NEXON_API_KEY },
@@ -36,22 +42,35 @@ function extractImageUrls(html) {
 async function main() {
   const today = todayKST();
   const state = JSON.parse(await readFile(STATE_PATH, 'utf-8'));
+  const lastSentDate = state.lastSentDate ?? state.lastSentWeek ?? null;
 
-  if (state.lastSentWeek === today) {
+  if (lastSentDate === today) {
     console.log(`Already sent for ${today}, skipping.`);
     return;
   }
 
+  // 금요일이 휴일이면 목요일 등에 미리 올라오는 경우가 있어서, 오늘 하루가 아니라
+  // (마지막 전송일, 오늘] 구간에 등록된 썬데이 메이플 공지를 찾는다.
+  // 오래된 공지를 잘못 보내지 않도록 최대 최근 7일까지만 본다.
+  const weekAgo = addDays(today, -6);
+  const from = lastSentDate && lastSentDate >= weekAgo ? addDays(lastSentDate, 1) : weekAgo;
+
   // "썬데이 메이플"은 일반 공지(v1/notice)가 아니라 이벤트 공지(v1/notice-event)로 등록된다.
   const { event_notice: events } = await fetchNexon('/maplestory/v1/notice-event');
-  const target = events.find(
-    (n) =>
-      (n.title.includes('썬데이 메이플') || n.title.includes('썬데이메이플')) &&
-      n.date.startsWith(today)
-  );
+  const target = events
+    .filter((n) => {
+      const date = n.date.slice(0, 10);
+      return (
+        (n.title.includes('썬데이 메이플') || n.title.includes('썬데이메이플')) &&
+        date >= from &&
+        date <= today &&
+        String(n.notice_id) !== String(state.lastNoticeId)
+      );
+    })
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
 
   if (!target) {
-    console.log(`No Sunday Maple event notice for ${today} yet.`);
+    console.log(`No Sunday Maple event notice between ${from} and ${today} yet.`);
     return;
   }
 
@@ -80,9 +99,9 @@ async function main() {
     throw new Error(`Discord webhook failed: ${webhookRes.status} ${await webhookRes.text()}`);
   }
 
-  await writeFile(STATE_PATH, JSON.stringify({ lastSentWeek: today }, null, 2) + '\n');
+  await writeFile(STATE_PATH, JSON.stringify({ lastSentDate: today, lastNoticeId: target.notice_id }, null, 2) + '\n');
 
-  console.log(`Sent Sunday Maple notice for ${today}: ${target.title} (${imageUrls.length} images)`);
+  console.log(`Sent Sunday Maple notice (posted ${target.date}) on ${today}: ${target.title} (${imageUrls.length} images)`);
 }
 
 main().catch((err) => {
